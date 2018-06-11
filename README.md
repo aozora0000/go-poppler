@@ -1,6 +1,8 @@
 go-poppler
 ==========
 
+# forked from [cheggaaa/go-poppler](https://github.com/cheggaaa/go-poppler)
+
 ### Installation:
 install poppler-glib and cairo (for Debian/Ubuntu):   
 ```apt-get install libpoppler-glib-dev libcairo2-dev```   
