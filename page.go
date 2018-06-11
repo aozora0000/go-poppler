@@ -6,23 +6,114 @@ package poppler
 #include <poppler.h>
 #include <glib.h>
 #include <cairo.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <cairo.h>
+
+ #define cairo_wrap_VECTOR_INIT_SIZE 64
+
 static unsigned char getbyte(unsigned char *buf, int idx) {
 	return buf[idx];
 }
+
+ typedef struct cairo_wrap_vector {
+ 	char *buf;
+ 	size_t cap;
+ 	size_t len;
+ } cairo_wrap_vector;
+
+ void cairo_wrap_vector_free(cairo_wrap_vector *v) {
+ 	if (v->buf) {
+ 		free(v->buf);
+ 	}
+ 	free(v);
+ }
+
+ void cairo_wrap_vector_init(cairo_wrap_vector *v) {
+ 	v->len = 0;
+ 	v->cap = 0;
+ 	size_t cap = cairo_wrap_VECTOR_INIT_SIZE;
+ 	char *buf = malloc(sizeof(char) * cap);
+ 	if (buf) {
+ 		v->buf = buf;
+ 		v->cap = cap;
+ 	}
+ }
+
+ cairo_wrap_vector *cairo_wrap_vector_new() {
+ 	cairo_wrap_vector *v = malloc(sizeof(cairo_wrap_vector));
+ 	cairo_wrap_vector_init(v);
+ 	return v;
+ }
+
+ static int cairo_wrap_vector_grow(cairo_wrap_vector *v, size_t len) {
+ 	int status = 0;
+ 	if (v->cap <= v->len+len) {
+ 		unsigned int cap;
+ 		char* buf;
+ 		if (v->cap == 0) {
+ 			cap = cairo_wrap_VECTOR_INIT_SIZE + len;
+ 			buf = malloc(sizeof(char) * cap);
+ 		} else {
+ 			cap = (v->cap*2) + len;
+ 			buf = realloc(v->buf, sizeof(char) * cap);
+ 		}
+ 		if (buf) {
+ 			v->buf = buf;
+ 			v->cap = cap;
+ 		} else {
+ 			status = 1;
+ 		}
+ 	}
+ 	return status;
+ }
+
+ static int cairo_wrap_vector_append(cairo_wrap_vector *v, const unsigned char *data, size_t len) {
+ 	int status = cairo_wrap_vector_grow(v, len);
+ 	if (status == 0) {
+ 		memcpy(&v->buf[v->len], data, len);
+ 		v->len += len;
+ 	}
+ 	return status;
+ }
+
+ cairo_status_t cairo_wrap_writer(void *closure, const unsigned char *data, unsigned int length) {
+ 	cairo_status_t status;
+ 	cairo_wrap_vector *v = (cairo_wrap_vector*)closure;
+ 	switch (cairo_wrap_vector_append(v, data, (size_t) length)) {
+ 	case 0:
+ 		status = CAIRO_STATUS_SUCCESS;
+ 		break;
+ 	case 1:
+ 		status = CAIRO_STATUS_NO_MEMORY;
+ 		break;
+ 	default:
+ 		status = CAIRO_STATUS_WRITE_ERROR;
+ 		break;
+ 	}
+ 	return status;
+ }
+
+ cairo_status_t cairo_wrap_write_surface_to_vector(cairo_surface_t *surface, cairo_wrap_vector *vec)
+ {
+ 	cairo_status_t status = cairo_surface_write_to_png_stream(surface, cairo_wrap_writer, vec);
+ 	return status;
+ }
 */
 import "C"
 import (
 	"image"
 	"image/color"
 	"unsafe"
-)
+	"github.com/ungerik/go-cairo"
+	)
 
 //import "fmt"
 
 type Page struct {
 	p *C.struct__PopplerPage
 }
-
 type RenderOptions struct {
 	FillColor color.RGBA
 	NoAA      bool
@@ -154,7 +245,52 @@ func (p *Page) GetSize() (int, int) {
 	return int(width), int(height)
 }
 
-func (p *Page) WriteToPNGStream(opts *RenderOptions) image.Image {
+func (p *Page) WriteToPNGStream(opts *RenderOptions) ([]byte, cairo.Status) {
+
+	width, height := p.GetSize()
+	if opts != nil {
+		width = int(opts.Scale * float64(width))
+		height = int(opts.Scale * float64(height))
+	}
+	surface := C.cairo_image_surface_create(C.CAIRO_FORMAT_ARGB32, C.int(width), C.int(height))
+	defer C.cairo_surface_destroy(surface)
+
+	ctx := C.cairo_create(surface)
+	defer C.cairo_destroy(ctx)
+
+	ow, oh := p.Size()
+	fw := float64(width)
+	fh := float64(height)
+	sw, sh := float64(fw/ow), float64(fh/oh)
+	C.cairo_scale(ctx, C.double(sw), C.double(sh))
+
+	fillColor := color.RGBA{255, 255, 255, 255}
+	if opts != nil {
+		fillColor = opts.FillColor
+	}
+	C.cairo_set_source_rgba(ctx, C.double(float64(fillColor.R)/float64(255)),
+		C.double(float64(fillColor.G)/float64(255)),
+		C.double(float64(fillColor.B)/float64(255)),
+		C.double(float64(fillColor.A)/float64(255)))
+	C.cairo_rectangle(ctx, 0, 0, C.double(width), C.double(height))
+	C.cairo_fill(ctx)
+
+	if opts != nil && opts.NoAA {
+		C.cairo_set_antialias(ctx, C.CAIRO_ANTIALIAS_NONE)
+	}
+
+	C.poppler_page_render_for_printing(p.p, ctx)
+
+	vec := C.cairo_wrap_vector_new()
+	defer C.cairo_wrap_vector_free(vec)
+
+	status := cairo.Status(C.cairo_wrap_write_surface_to_vector(surface, vec))
+	buf := C.GoBytes(unsafe.Pointer(vec.buf), C.int(vec.len))
+
+	return buf, status
+}
+
+func (p *Page) TransferPNGImage(opts *RenderOptions) image.Image {
 	width, height := p.GetSize()
 	if opts != nil {
 		width = int(opts.Scale * float64(width))
