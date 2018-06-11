@@ -1,8 +1,6 @@
 package poppler
 
 // #include <glib.h>
-// #include <unistd.h>
-// #include <stdlib.h>
 import "C"
 
 func toString(in *C.gchar) string {
@@ -10,5 +8,5 @@ func toString(in *C.gchar) string {
 }
 
 func toBool(in C.gboolean) bool {
-	return  int(in) > 0
+	return int(in) > 0
 }

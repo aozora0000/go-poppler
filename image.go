@@ -1,11 +1,13 @@
 package poppler
 
-// #cgo pkg-config: --cflags-only-I poppler-glib
+// #cgo pkg-config: poppler-glib
 // #include <poppler.h>
 // #include <glib.h>
 import "C"
-import "unsafe"
-import "github.com/ungerik/go-cairo"
+import (
+	"github.com/ungerik/go-cairo"
+	"unsafe"
+)
 
 // Image
 
