@@ -11,8 +11,6 @@ package poppler
 #include <string.h>
 #include <cairo.h>
 
- #define cairo_wrap_VECTOR_INIT_SIZE 64
-
 static unsigned char getbyte(unsigned char *buf, int idx) {
 	return buf[idx];
 }
@@ -21,6 +19,7 @@ static unsigned char getbyte(unsigned char *buf, int idx) {
  	char *buf;
  	size_t cap;
  	size_t len;
+ 	size_t size;
  } cairo_wrap_vector;
 
  void cairo_wrap_vector_free(cairo_wrap_vector *v) {
@@ -30,10 +29,11 @@ static unsigned char getbyte(unsigned char *buf, int idx) {
  	free(v);
  }
 
- void cairo_wrap_vector_init(cairo_wrap_vector *v) {
+ void cairo_wrap_vector_init(cairo_wrap_vector *v, int size) {
  	v->len = 0;
  	v->cap = 0;
- 	size_t cap = cairo_wrap_VECTOR_INIT_SIZE;
+ 	v->size = size;
+ 	size_t cap = size;
  	char *buf = malloc(sizeof(char) * cap);
  	if (buf) {
  		v->buf = buf;
@@ -41,9 +41,9 @@ static unsigned char getbyte(unsigned char *buf, int idx) {
  	}
  }
 
- cairo_wrap_vector *cairo_wrap_vector_new() {
+ cairo_wrap_vector *cairo_wrap_vector_new(int size) {
  	cairo_wrap_vector *v = malloc(sizeof(cairo_wrap_vector));
- 	cairo_wrap_vector_init(v);
+ 	cairo_wrap_vector_init(v, size);
  	return v;
  }
 
@@ -53,7 +53,7 @@ static unsigned char getbyte(unsigned char *buf, int idx) {
  		unsigned int cap;
  		char* buf;
  		if (v->cap == 0) {
- 			cap = cairo_wrap_VECTOR_INIT_SIZE + len;
+ 			cap = v->size + len;
  			buf = malloc(sizeof(char) * cap);
  		} else {
  			cap = (v->cap*2) + len;
@@ -107,7 +107,7 @@ import (
 	"image/color"
 	"unsafe"
 	"github.com/ungerik/go-cairo"
-	)
+)
 
 //import "fmt"
 
@@ -118,6 +118,7 @@ type RenderOptions struct {
 	FillColor color.RGBA
 	NoAA      bool
 	Scale     float64
+	MemorySize int
 }
 
 func (p *Page) Text() string {
@@ -246,11 +247,12 @@ func (p *Page) GetSize() (int, int) {
 }
 
 func (p *Page) WriteToPNGStream(opts *RenderOptions) ([]byte, cairo.Status) {
-
 	width, height := p.GetSize()
+	size := 64
 	if opts != nil {
 		width = int(opts.Scale * float64(width))
 		height = int(opts.Scale * float64(height))
+		size = opts.MemorySize
 	}
 	surface := C.cairo_image_surface_create(C.CAIRO_FORMAT_ARGB32, C.int(width), C.int(height))
 	defer C.cairo_surface_destroy(surface)
@@ -281,7 +283,7 @@ func (p *Page) WriteToPNGStream(opts *RenderOptions) ([]byte, cairo.Status) {
 
 	C.poppler_page_render_for_printing(p.p, ctx)
 
-	vec := C.cairo_wrap_vector_new()
+	vec := C.cairo_wrap_vector_new(C.int(size))
 	defer C.cairo_wrap_vector_free(vec)
 
 	status := cairo.Status(C.cairo_wrap_write_surface_to_vector(surface, vec))

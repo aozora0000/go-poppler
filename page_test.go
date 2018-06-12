@@ -43,6 +43,7 @@ func TestPage_WriteToPNGStream(t *testing.T) {
 		FillColor: color.RGBA{255, 255, 255, 255},
 		NoAA:      true,
 		Scale:     5.554,
+		MemorySize: 64,
 	})
 	out, err := os.Create("sample/stream.png")
 
