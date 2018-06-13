@@ -326,18 +326,6 @@ func (p *Page) TransferPNGImage(opts *RenderOptions) image.Image {
 	}
 
 	C.poppler_page_render_for_printing(p.p, ctx)
-	data := C.cairo_image_surface_get_data(surface)
-	nrgba := image.NewNRGBA(image.Rect(0, 0, width, height))
-	for x := 0; x < width; x++ {
-		for y := 0; y < height; y++ {
-			nrgba.SetNRGBA(x, y, color.NRGBA{
-				R: uint8(C.getbyte(data, C.int(x*4+4*y*width+2))),
-				G: uint8(C.getbyte(data, C.int(x*4+4*y*width+1))),
-				B: uint8(C.getbyte(data, C.int(x*4+4*y*width+0))),
-				A: uint8(C.getbyte(data, C.int(x*4+4*y*width+3))),
-			})
-		}
-	}
-
-	return nrgba
+	s := cairo.NewSurfaceFromC((cairo.Cairo_surface)(unsafe.Pointer(surface)), (cairo.Cairo_context)(unsafe.Pointer(ctx)))
+	return s.GetImage()
 }
